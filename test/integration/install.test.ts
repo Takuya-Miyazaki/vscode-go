@@ -13,15 +13,16 @@ import sinon = require('sinon');
 import url = require('url');
 import util = require('util');
 import vscode = require('vscode');
+import { getGoConfig } from '../../src/config';
 import { toolInstallationEnvironment } from '../../src/goEnv';
 import { installTools } from '../../src/goInstallTools';
-import { allToolsInformation, getTool, getToolAtVersion } from '../../src/goTools';
-import { getBinPath, getGoVersion, rmdirRecursive } from '../../src/util';
+import { allToolsInformation, getConfiguredTools, getTool, getToolAtVersion } from '../../src/goTools';
+import { getBinPath, getGoVersion, GoVersion, rmdirRecursive } from '../../src/util';
 import { correctBinname } from '../../src/utils/pathUtils';
 
 suite('Installation Tests', function () {
 	// Disable timeout when we are running slow tests.
-	let timeout = 10000;
+	let timeout = 60000;
 	if (shouldRunSlowTests()) {
 		timeout = 0;
 	}
@@ -70,7 +71,7 @@ suite('Installation Tests', function () {
 		let configStub: sinon.SinonStub;
 		if (withLocalProxy) {
 			proxyDir = buildFakeProxy([].concat(...testCases));
-			const goConfig = Object.create(vscode.workspace.getConfiguration('go'), {
+			const goConfig = Object.create(getGoConfig(), {
 				toolsEnvVars: {
 					value: {
 						GOPROXY: url.pathToFileURL(proxyDir),
@@ -165,4 +166,31 @@ function buildFakeProxy(tools: string[]) {
 // allowing us to opt-in to more rigorous testing only before releases.
 function shouldRunSlowTests(): boolean {
 	return !!process.env['VSCODEGO_BEFORE_RELEASE_TESTS'];
+}
+
+suite('getConfiguredTools', () => {
+	test('do not require legacy tools when using language server', async () => {
+		const configured = getConfiguredTools(fakeGoVersion('1.15.6'), { useLanguageServer: true });
+		const got = configured.map((tool) => tool.name) ?? [];
+		assert(got.includes('gopls'), `omitted 'gopls': ${JSON.stringify(got)}`);
+		assert(!got.includes('guru') && !got.includes('gocode'), `suggested legacy tools: ${JSON.stringify(got)}`);
+	});
+
+	test('do not require gopls when not using language server', async () => {
+		const configured = getConfiguredTools(fakeGoVersion('1.15.6'), { useLanguageServer: false });
+		const got = configured.map((tool) => tool.name) ?? [];
+		assert(!got.includes('gopls'), `suggested 'gopls': ${JSON.stringify(got)}`);
+		assert(got.includes('guru') && got.includes('gocode'), `omitted legacy tools: ${JSON.stringify(got)}`);
+	});
+
+	test('do not require gopls when the go version is old', async () => {
+		const configured = getConfiguredTools(fakeGoVersion('1.9'), { useLanguageServer: true });
+		const got = configured.map((tool) => tool.name) ?? [];
+		assert(!got.includes('gopls'), `suggested 'gopls' for old go: ${JSON.stringify(got)}`);
+		assert(got.includes('guru') && got.includes('gocode'), `omitted legacy tools: ${JSON.stringify(got)}`);
+	});
+});
+
+function fakeGoVersion(version: string) {
+	return new GoVersion('/path/to/go', `go version go${version} windows/amd64`);
 }

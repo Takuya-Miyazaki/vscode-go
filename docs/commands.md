@@ -1,6 +1,6 @@
 # Commands
 
-In addition to integrated editing features, this extension offers a number of commands, which can be executed manually through the [Command Palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette) (Ctrl+Shift+P).
+In addition to integrated editing features, this extension offers a number of commands, which can be executed manually through the [Command Palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette) (Ctrl+Shift+P on Linux/Windows or Cmd+Shift+P on Mac OS).
 
 Some of these commands are also available in the VS Code context menu (right-click). To control which of these commands show up in the editor context menu, update the [`"go.editorContextMenuCommands"`](settings.md#go.editorContextMenuCommands) setting.
 
@@ -94,6 +94,10 @@ Generates method stub for implementing the provided interface and inserts at the
 ### `Go: Extract Language Server Logs To Editor`
 
 Extract logs in the `gopls (server)` output channel to the editor.
+
+### `Go: Welcome`
+
+Open the welcome page for the Go extension.
 
 ### `Go: Toggle gc details`
 
@@ -202,3 +206,7 @@ Show the current Go survey configuration
 ### `Go: Reset Survey Configuration`
 
 Reset the current Go survey configuration history
+
+### `Go: Toggle Workspace Trust Flag`
+
+Toggle the workspace trust flag. Workspace settings that determine tool locations are disabled by default in untrusted workspaces.

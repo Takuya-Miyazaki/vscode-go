@@ -52,12 +52,16 @@ run_test() {
 
   echo "**** Run settings generator ****"
   go run tools/generate.go -w=false
+
+  echo "**** Check if vsce works ****"
+  vsce package
 }
 
 run_test_in_docker() {
   echo "**** Building the docker image ***"
   docker build -t vscode-test-env -f ./build/Dockerfile .
-  docker run --workdir=/workspace -v "$(pwd):/workspace" vscode-test-env ci
+  # For debug tests, we need ptrace.
+  docker run --cap-add SYS_PTRACE --workdir=/workspace -v "$(pwd):/workspace" vscode-test-env ci
 }
 
 prepare_nightly() {

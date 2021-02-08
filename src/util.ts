@@ -11,8 +11,10 @@ import semver = require('semver');
 import util = require('util');
 import vscode = require('vscode');
 import { NearestNeighborDict, Node } from './avlTree';
+import { DefaultConfig, getGoConfig } from './config';
 import { extensionId } from './const';
 import { toolExecutionEnvironment } from './goEnv';
+import { languageClient } from './goLanguageServer';
 import { buildDiagnosticCollection, lintDiagnosticCollection, vetDiagnosticCollection } from './goMain';
 import { getCurrentPackage } from './goModules';
 import { outputChannel } from './goStatus';
@@ -156,25 +158,20 @@ let cachedGoVersion: GoVersion | undefined;
 let vendorSupport: boolean | undefined;
 let toolsGopath: string;
 
-// getGoConfig is declared as an exported const rather than a function, so it can be stubbbed in testing.
-export const getGoConfig = (uri?: vscode.Uri) => {
-	return getConfig('go');
-};
-
-// getGoplsConfig returns the user's gopls configuration.
-export function getGoplsConfig() {
-	return getConfig('gopls');
-}
-
-function getConfig(section: string, uri?: vscode.Uri) {
-	if (!uri) {
-		if (vscode.window.activeTextEditor) {
-			uri = vscode.window.activeTextEditor.document.uri;
-		} else {
-			uri = null;
+// getCheckForToolsUpdatesConfig returns go.toolsManagement.checkForUpdates configuration.
+export function getCheckForToolsUpdatesConfig(gocfg: vscode.WorkspaceConfiguration) {
+	// useGoProxyToCheckForToolUpdates deprecation
+	// TODO: Step 1. mark as deprecated in Dec 2020 release, and update dev containers.
+	//       Step 2. prompt users to switch config. Jan 2020
+	//       Step 3. delete useGoProxyToCheckForToolUpdates support. Feb 2020
+	const legacyCfg = gocfg.get('useGoProxyToCheckForToolUpdates');
+	if (legacyCfg === false) {
+		const cfg = gocfg.inspect('toolsManagement.checkForUpdates');
+		if (cfg.globalValue === undefined && cfg.workspaceValue === undefined) {
+			return 'local';
 		}
 	}
-	return vscode.workspace.getConfiguration(section, uri);
+	return gocfg.get('toolsManagement.checkForUpdates') as string;
 }
 
 export function byteOffsetAt(document: vscode.TextDocument, position: vscode.Position): number {
@@ -481,7 +478,11 @@ function resolveToolsGopath(): string {
 		return toolsGopathForWorkspace;
 	}
 
-	// If any of the folders in multi root have toolsGopath set, use it.
+	if (DefaultConfig().workspaceIsTrusted() === false) {
+		return toolsGopathForWorkspace;
+	}
+
+	// If any of the folders in multi root have toolsGopath set and the workspace is trusted, use it.
 	for (const folder of vscode.workspace.workspaceFolders) {
 		let toolsGopathFromConfig = <string>getGoConfig(folder.uri).inspect('toolsGopath').workspaceFolderValue;
 		toolsGopathFromConfig = resolvePath(toolsGopathFromConfig, folder.uri.fsPath);
@@ -489,6 +490,7 @@ function resolveToolsGopath(): string {
 			return toolsGopathFromConfig;
 		}
 	}
+	return toolsGopathForWorkspace;
 }
 
 // getBinPath returns the path to the tool.
@@ -894,27 +896,42 @@ export function handleDiagnosticErrors(
 
 		if (diagnosticCollection === buildDiagnosticCollection) {
 			// If there are lint/vet warnings on current file, remove the ones co-inciding with the new build errors
-			if (lintDiagnosticCollection && lintDiagnosticCollection.has(fileUri)) {
-				lintDiagnosticCollection.set(
-					fileUri,
-					deDupeDiagnostics(newDiagnostics, lintDiagnosticCollection.get(fileUri).slice())
-				);
-			}
-
-			if (vetDiagnosticCollection && vetDiagnosticCollection.has(fileUri)) {
-				vetDiagnosticCollection.set(
-					fileUri,
-					deDupeDiagnostics(newDiagnostics, vetDiagnosticCollection.get(fileUri).slice())
-				);
-			}
+			removeDuplicateDiagnostics(lintDiagnosticCollection, fileUri, newDiagnostics);
+			removeDuplicateDiagnostics(vetDiagnosticCollection, fileUri, newDiagnostics);
 		} else if (buildDiagnosticCollection && buildDiagnosticCollection.has(fileUri)) {
 			// If there are build errors on current file, ignore the new lint/vet warnings co-inciding with them
 			newDiagnostics = deDupeDiagnostics(buildDiagnosticCollection.get(fileUri).slice(), newDiagnostics);
+		}
+		// If there are errors from the language client that are on the current file, ignore the warnings co-inciding
+		// with them.
+		if (languageClient && languageClient.diagnostics?.has(fileUri)) {
+			newDiagnostics = deDupeDiagnostics(languageClient.diagnostics.get(fileUri).slice(), newDiagnostics);
 		}
 		diagnosticCollection.set(fileUri, newDiagnostics);
 	});
 }
 
+/**
+ * Removes any diagnostics in collection, where there is a diagnostic in
+ * newDiagnostics on the same line in fileUri.
+ */
+export function removeDuplicateDiagnostics(
+	collection: vscode.DiagnosticCollection,
+	fileUri: vscode.Uri,
+	newDiagnostics: vscode.Diagnostic[]
+) {
+	if (collection && collection.has(fileUri)) {
+		collection.set(
+			fileUri,
+			deDupeDiagnostics(newDiagnostics, collection.get(fileUri).slice())
+		);
+	}
+}
+
+/**
+ * Removes any diagnostics in otherDiagnostics, where there is a diagnostic in
+ * buildDiagnostics on the same line.
+ */
 function deDupeDiagnostics(
 	buildDiagnostics: vscode.Diagnostic[],
 	otherDiagnostics: vscode.Diagnostic[]

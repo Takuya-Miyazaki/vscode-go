@@ -13,11 +13,14 @@ import path = require('path');
 import { promisify } from 'util';
 import vscode = require('vscode');
 import WebRequest = require('web-request');
+import { getGoConfig } from './config';
 import { toolInstallationEnvironment } from './goEnv';
 import { logVerbose } from './goLogging';
 import { addGoStatus, goEnvStatusbarItem, outputChannel, removeGoStatus } from './goStatus';
 import { getFromGlobalState, getFromWorkspaceState, updateGlobalState, updateWorkspaceState } from './stateUtils';
-import { getBinPath, getGoConfig, getGoVersion, getTempFilePath, GoVersion, rmdirRecursive } from './util';
+import {
+	getBinPath, getCheckForToolsUpdatesConfig, getGoVersion,
+	getTempFilePath, GoVersion, rmdirRecursive } from './util';
 import {
 	correctBinname,
 	executableFileExists,
@@ -517,7 +520,8 @@ const dismissedGoVersionUpdatesKey = 'dismissedGoVersionUpdates';
 
 export async function offerToInstallLatestGoVersion() {
 	const goConfig = getGoConfig();
-	if (!goConfig['useGoProxyToCheckForToolUpdates']) {
+	const checkForUpdate = getCheckForToolsUpdatesConfig(goConfig);
+	if (checkForUpdate === 'off' || checkForUpdate === 'local') {  // 'proxy' or misconfiguration..
 		return;
 	}
 
